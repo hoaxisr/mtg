@@ -333,6 +333,11 @@ func runProxy(conf *config.Config, version string) error { //nolint: funlen, cyc
 		return fmt.Errorf("cannot create a proxy: %w", err)
 	}
 
+	webHandler, err := makeWebHandler(conf, proxy, logger)
+	if err != nil {
+		return err
+	}
+
 	listener, err := utils.NewListener(conf.BindTo.Get(""), 0)
 	if err != nil {
 		return fmt.Errorf("cannot start proxy: %w", err)
@@ -348,9 +353,20 @@ func runProxy(conf *config.Config, version string) error { //nolint: funlen, cyc
 
 	ctx := utils.RootContext()
 
+	shutdownWeb, err := serveWeb(ctx, conf, webHandler, logger)
+	if err != nil {
+		return err
+	}
+
 	go proxy.Serve(listener) //nolint: errcheck
 
 	<-ctx.Done()
+
+	if shutdownWeb != nil {
+		// Sessions drain while the proxy still relays their traffic.
+		shutdownWeb()
+	}
+
 	listener.Close() //nolint: errcheck
 	proxy.Shutdown()
 

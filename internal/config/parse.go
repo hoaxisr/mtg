@@ -86,6 +86,47 @@ type tomlConfig struct {
 			MetricPrefix string `toml:"metric-prefix" json:"metricPrefix,omitempty"`
 		} `toml:"prometheus" json:"prometheus,omitempty"`
 	} `toml:"stats" json:"stats,omitempty"`
+	Web struct {
+		Enabled        bool     `toml:"enabled" json:"enabled,omitempty"`
+		BindTo         string   `toml:"bind-to" json:"bindTo,omitempty"`
+		Hostname       string   `toml:"hostname" json:"hostname,omitempty"`
+		PublicUpstream string   `toml:"public-upstream" json:"publicUpstream,omitempty"`
+		PublicDir      string   `toml:"public-dir" json:"publicDir,omitempty"`
+		TrustedProxies []string `toml:"trusted-proxies" json:"trustedProxies,omitempty"`
+		TokenKey       string   `toml:"token-key" json:"tokenKey,omitempty"`
+		Limits         struct {
+			MaxSessions          uint `toml:"max-sessions" json:"maxSessions,omitempty"`
+			MaxSessionsPerIP     uint `toml:"max-sessions-per-ip" json:"maxSessionsPerIp,omitempty"`
+			MaxStreams           uint `toml:"max-streams" json:"maxStreams,omitempty"`
+			MaxStreamsPerSession uint `toml:"max-streams-per-session" json:"maxStreamsPerSession,omitempty"`
+
+			NewSessionsPerMinute uint `toml:"new-sessions-per-minute" json:"newSessionsPerMinute,omitempty"`
+			NewSessionsBurst     uint `toml:"new-sessions-burst" json:"newSessionsBurst,omitempty"`
+			NewStreamsPerMinute  uint `toml:"new-streams-per-minute" json:"newStreamsPerMinute,omitempty"`
+			NewStreamsBurst      uint `toml:"new-streams-burst" json:"newStreamsBurst,omitempty"`
+
+			MaxBootstraps          uint `toml:"max-bootstraps" json:"maxBootstraps,omitempty"`
+			MaxBootstrapsPerIP     uint `toml:"max-bootstraps-per-ip" json:"maxBootstrapsPerIp,omitempty"`
+			NewBootstrapsPerMinute uint `toml:"new-bootstraps-per-minute" json:"newBootstrapsPerMinute,omitempty"`
+			NewBootstrapsBurst     uint `toml:"new-bootstraps-burst" json:"newBootstrapsBurst,omitempty"`
+
+			MaxPendingPerSession string `toml:"max-pending-per-session" json:"maxPendingPerSession,omitempty"`
+			MaxPendingGlobal     string `toml:"max-pending-global" json:"maxPendingGlobal,omitempty"`
+			CarrierBatchBytes    string `toml:"carrier-batch-bytes" json:"carrierBatchBytes,omitempty"`
+			MaxBodyBytes         string `toml:"max-body-bytes" json:"maxBodyBytes,omitempty"`
+			MaxFramePayload      string `toml:"max-frame-payload" json:"maxFramePayload,omitempty"`
+
+			MaxPendingItemsPerSession uint `toml:"max-pending-items-per-session" json:"maxPendingItemsPerSession,omitempty"`
+			MaxPendingItemsGlobal     uint `toml:"max-pending-items-global" json:"maxPendingItemsGlobal,omitempty"`
+			MaxClosedStreamIDs        uint `toml:"max-closed-stream-ids" json:"maxClosedStreamIds,omitempty"`
+		} `toml:"limits" json:"limits,omitempty"`
+		Timeouts struct {
+			LongPoll          string `toml:"long-poll" json:"longPoll,omitempty"`
+			ReconnectGrace    string `toml:"reconnect-grace" json:"reconnectGrace,omitempty"`
+			BootstrapLifetime string `toml:"bootstrap-lifetime" json:"bootstrapLifetime,omitempty"`
+			Shutdown          string `toml:"shutdown" json:"shutdown,omitempty"`
+		} `toml:"timeouts" json:"timeouts,omitempty"`
+	} `toml:"web" json:"web,omitempty"`
 }
 
 func Parse(rawData []byte) (*Config, error) {

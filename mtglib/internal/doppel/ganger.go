@@ -78,12 +78,14 @@ func (g *Ganger) NoiseParams() NoiseParams {
 }
 
 func (g *Ganger) NewConn(conn essentials.Conn) (Conn, error) {
-	rvChan := make(chan Conn)
+	// Buffered so the run loop's reply never blocks and never hits a closed
+	// channel when this caller gives up on ctx first; the channel is simply
+	// dropped once both sides are done with it.
+	rvChan := make(chan Conn, 1)
 	req := gangerConnRequest{
 		ret:     rvChan,
 		payload: conn,
 	}
-	defer close(req.ret)
 
 	select {
 	case <-g.ctx.Done():

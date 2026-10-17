@@ -410,3 +410,87 @@ bind-to = "127.0.0.1:3129"
 http-path = "/"
 # prefix for metrics for prometheus
 metric-prefix = "mtg"
+
+# WEB proxy. Telegram clients that support WEB proxies tunnel their
+# traffic through real HTTPS to a real website. mtg serves that website
+# (a decoy) and the hidden relay on bind-to. mtg does not terminate TLS
+# for WEB: put a TLS-terminating reverse proxy in front of it. See the
+# "WEB proxy" section of README.md.
+#
+# Minimal Caddy example (Caddy sets X-Forwarded-For by default):
+#
+#   mtg.example.com {
+#       reverse_proxy 127.0.0.1:8080
+#   }
+#
+# Minimal nginx example (/down long-polls for 25s, so the read timeout
+# must be at least 60s):
+#
+#   server {
+#       listen 443 ssl;
+#       server_name mtg.example.com;
+#       # ssl_certificate and ssl_certificate_key go here
+#       location / {
+#           proxy_pass http://127.0.0.1:8080;
+#           proxy_http_version 1.1;
+#           proxy_set_header Host $host;
+#           proxy_set_header X-Forwarded-For $remote_addr;
+#           proxy_read_timeout 60s;
+#           proxy_buffering off;
+#           # /up bodies reach carrier-batch-bytes (2 MiB by default) and
+#           # nginx refuses bodies over 1 MiB unless told otherwise: this
+#           # must be at least [web.limits] max-body-bytes.
+#           client_max_body_size 4m;
+#       }
+#   }
+[web]
+# enabled/disabled
+enabled = false
+# host:port to listen on (required if enabled). Bind to loopback and
+# reach it only through the reverse proxy.
+# bind-to = "127.0.0.1:8080"
+# Public DNS name served by the reverse proxy (required if enabled).
+# Lowercase, not an IP literal.
+# hostname = "mtg.example.com"
+# Decoy website, exactly one of public-upstream and public-dir must be set.
+# public-upstream is an http:// URL to a local site: an IP literal host
+# (loopback, private or link-local) and no path.
+# public-upstream = "http://127.0.0.1:8081"
+# public-dir is a directory with static files served as the decoy.
+# public-dir = "/var/www/decoy"
+# CIDRs allowed to set X-Forwarded-For. It must include the source
+# address of the reverse proxy if it is not on loopback.
+# trusted-proxies = ["127.0.0.0/8", "::1/128"]
+# Optional base64 32-byte key for session tokens. If unset, it is derived
+# from the secret. Never logged.
+# token-key = ""
+
+# Limits of the WEB proxy. 0 in per-ip limits means unlimited.
+[web.limits]
+# max-sessions = 128
+# max-sessions-per-ip = 0
+# max-streams = 4096
+# max-streams-per-session = 128
+# new-sessions-per-minute = 600
+# new-sessions-burst = 128
+# new-streams-per-minute = 6000
+# new-streams-burst = 512
+# max-bootstraps = 512
+# max-bootstraps-per-ip = 0
+# new-bootstraps-per-minute = 1200
+# new-bootstraps-burst = 256
+# max-pending-per-session = "32mib"
+# max-pending-global = "512mib"
+# carrier-batch-bytes = "2mib"
+# max-body-bytes = "2mib"
+# max-frame-payload = "1mib"
+# max-pending-items-per-session = 16384
+# max-pending-items-global = 262144
+# max-closed-stream-ids = 4096
+
+# Timeouts of the WEB proxy.
+[web.timeouts]
+# long-poll = "25s"
+# reconnect-grace = "2m"
+# bootstrap-lifetime = "2m"
+# shutdown = "15s"

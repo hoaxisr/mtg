@@ -12,11 +12,13 @@ import (
 
 	"github.com/9seconds/mtg/v2/internal/config"
 	"github.com/9seconds/mtg/v2/internal/utils"
+	"github.com/9seconds/mtg/v2/mtglib/web"
 )
 
 type accessResponse struct {
 	IPv4   *accessResponseURLs `json:"ipv4,omitempty"`
 	IPv6   *accessResponseURLs `json:"ipv6,omitempty"`
+	Web    *accessResponseWeb  `json:"web,omitempty"`
 	Secret struct {
 		Hex    string `json:"hex"`
 		Base64 string `json:"base64"`
@@ -26,6 +28,15 @@ type accessResponse struct {
 type accessResponseURLs struct {
 	IP        net.IP `json:"ip"`
 	Port      uint   `json:"port"`
+	TgURL     string `json:"tg_url"`     //nolint: tagliatelle
+	TgQrCode  string `json:"tg_qrcode"`  //nolint: tagliatelle
+	TmeURL    string `json:"tme_url"`    //nolint: tagliatelle
+	TmeQrCode string `json:"tme_qrcode"` //nolint: tagliatelle
+}
+
+type accessResponseWeb struct {
+	Hostname  string `json:"hostname"`
+	Secret    string `json:"secret"`
 	TgURL     string `json:"tg_url"`     //nolint: tagliatelle
 	TgQrCode  string `json:"tg_qrcode"`  //nolint: tagliatelle
 	TmeURL    string `json:"tme_url"`    //nolint: tagliatelle
@@ -49,6 +60,7 @@ func (a *Access) Run(cli *CLI, version string) error {
 	resp := &accessResponse{}
 	resp.Secret.Base64 = conf.Secret.Base64()
 	resp.Secret.Hex = conf.Secret.Hex()
+	resp.Web = makeWebURLs(conf)
 
 	ntw, err := makeNetwork(conf, version)
 	if err != nil {
@@ -139,6 +151,24 @@ func (a *Access) makeURLs(conf *config.Config, ip net.IP) *accessResponseURLs {
 			RawQuery: urlQuery,
 		}).String(),
 	}
+	rv.TgQrCode = utils.MakeQRCodeURL(rv.TgURL)
+	rv.TmeQrCode = utils.MakeQRCodeURL(rv.TmeURL)
+
+	return rv
+}
+
+func makeWebURLs(conf *config.Config) *accessResponseWeb {
+	if !conf.Web.Enabled.Get(false) {
+		return nil
+	}
+
+	hostname := conf.Web.Hostname.Get("")
+
+	rv := &accessResponseWeb{
+		Hostname: hostname,
+		Secret:   web.WebSecret(conf.Secret),
+	}
+	rv.TgURL, rv.TmeURL = web.Links(hostname, conf.Secret)
 	rv.TgQrCode = utils.MakeQRCodeURL(rv.TgURL)
 	rv.TmeQrCode = utils.MakeQRCodeURL(rv.TmeURL)
 

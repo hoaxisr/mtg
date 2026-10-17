@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>WEB bridge harness</title>
+<style>
+  body { font: 14px/1.4 sans-serif; margin: 1em; }
+  label { display: block; margin: .4em 0; }
+  input { width: 32em; max-width: 90%; font-family: monospace; }
+  pre { background: #f4f4f4; padding: .5em; height: 22em; overflow: auto; }
+  iframe { width: 1px; height: 1px; border: 0; }
+</style>
+</head>
+<body>
+<h1>WEB bridge harness</h1>
+<p>Serve this page from <code>http://127.0.0.1:PORT</code>.</p>
+<label>Hostname <input id="host" placeholder="mtg.example.com" autocomplete="off"></label>
+<label>Secret (dd...) <input id="secret" placeholder="dd..." autocomplete="off"></label>
+<button id="go">Connect</button>
+<button id="stop" disabled>Close</button>
+<pre id="log"></pre>
+<div id="box"></div>
+<script>
+'use strict';
+
+const TYPES = {
+  1: 'OPEN', 2: 'DATA', 3: 'CLOSE', 4: 'WINDOW', 5: 'PING', 6: 'PONG',
+  0x10: 'HELLO', 0x11: 'WELCOME', 0x1f: 'BYE',
+};
+const HEADER = 8;
+
+const logEl = document.getElementById('log');
+let port = null;
+
+function log(line) {
+  logEl.textContent += new Date().toISOString().slice(11, 23) + ' ' + line + '\n';
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+function frame(type, streamId, payload) {
+  const out = new Uint8Array(HEADER + payload.length);
+  const view = new DataView(out.buffer);
+  out[0] = type;
+  out[1] = (streamId >>> 16) & 0xff;
+  out[2] = (streamId >>> 8) & 0xff;
+  out[3] = streamId & 0xff;
+  view.setUint32(4, payload.length, false);
+  out.set(payload, HEADER);
+  return out;
+}
+
+function describe(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  const lines = [];
+  let at = 0;
+  while (at < bytes.length) {
+    if (bytes.length - at < HEADER) {
+      lines.push('  truncated header, ' + (bytes.length - at) + ' bytes left');
+      break;
+    }
+    const type = bytes[at];
+    const stream = (bytes[at + 1] << 16) | (bytes[at + 2] << 8) | bytes[at + 3];
+    const len = view.getUint32(at + 4, false);
+    lines.push('  ' + (TYPES[type] || '0x' + type.toString(16)) + ' stream=' + stream + ' len=' + len);
+    at += HEADER + len;
+  }
+  return lines.join('\n');
+}
+
+function hexToBytes(hex) {
+  if (!/^([0-9a-fA-F]{2})+$/.test(hex)) throw new Error('secret must be hex');
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
+}
+
+function base64url(bytes) {
+  let s = '';
+  for (const b of bytes) s += String.fromCharCode(b);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// key = web secret bytes (0xdd + 16 key bytes), message =
+// "tdesktop-web-proxy-bridge-v1\n" + hostname, HMAC-SHA256, base64url.
+async function capability(hostname, secretHex) {
+  const key = await crypto.subtle.importKey(
+    'raw', hexToBytes(secretHex), {name: 'HMAC', hash: 'SHA-256'}, false, ['sign']);
+  const msg = new TextEncoder().encode('tdesktop-web-proxy-bridge-v1\n' + hostname);
+  return base64url(new Uint8Array(await crypto.subtle.sign('HMAC', key, msg)));
+}
+
+function onBridge(event) {
+  const data = event.data;
+  if (data instanceof ArrayBuffer) {
+    log('frames (' + data.byteLength + ' bytes):\n' + describe(data));
+  } else {
+    log(JSON.stringify(data));
+  }
+}
+
+function stop() {
+  if (port) {
+    try { port.postMessage({t: 'close'}); } catch (e) { /* ignore */ }
+    port.close();
+    port = null;
+  }
+  document.getElementById('box').textContent = '';
+  document.getElementById('stop').disabled = true;
+  document.getElementById('go').disabled = false;
+}
+
+async function start() {
+  const hostname = document.getElementById('host').value.trim().toLowerCase();
+  const secret = document.getElementById('secret').value.trim();
+  let cap;
+  try {
+    cap = await capability(hostname, secret);
+  } catch (e) {
+    log('error: ' + e.message);
+    return;
+  }
+  document.getElementById('go').disabled = true;
+  document.getElementById('stop').disabled = false;
+
+  const origin = 'https://' + hostname;
+  const iframe = document.createElement('iframe');
+  iframe.addEventListener('load', () => {
+    const channel = new MessageChannel();
+    port = channel.port1;
+    port.onmessage = onBridge;
+    iframe.contentWindow.postMessage({t: 'tproxy-init', v: 1}, origin, [channel.port2]);
+    log('init sent');
+
+    // First binary message must be HELLO (version 1), then batches of frames.
+    port.postMessage(frame(0x10, 0, new Uint8Array([1])).buffer);
+    log('sent HELLO');
+    const batch = new Uint8Array([
+      ...frame(0x01, 1, new Uint8Array(0)),
+      ...frame(0x02, 1, new Uint8Array(64)),
+    ]);
+    port.postMessage(batch.buffer);
+    log('sent OPEN 1 + DATA 1 (64 zero bytes)');
+  }, {once: true});
+  iframe.src = origin + '/?bridge=' + encodeURIComponent(cap);
+  document.getElementById('box').replaceChildren(iframe);
+  log('loading ' + origin + '/?bridge=...');
+}
+
+document.getElementById('go').addEventListener('click', start);
+document.getElementById('stop').addEventListener('click', stop);
+</script>
+</body>
+</html>

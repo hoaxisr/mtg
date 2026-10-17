@@ -458,6 +458,14 @@ $ mtg access /etc/mtg.toml
   "secret": {
     "hex": "...",
     "base64": "..."
+  },
+  "web": {
+    "hostname": "mtg.example.com",
+    "secret": "dd...",
+    "tg_url": "tg://webproxy?...",
+    "tg_qrcode": "https://api.qrserver.com/v1/create-qr-code?data...",
+    "tme_url": "https://t.me/webproxy?...",
+    "tme_qrcode": "https://api.qrserver.com/v1/create-qr-code?data..."
   }
 }
 ```
@@ -516,6 +524,53 @@ This is not very necessary. Keep in mind these rules:
    [caddy](https://caddyserver.com/) and [H2O](https://h2o.examp1e.net/). If so,
    you can enable `drs` setting.
 9. **If you are not sure, touch nothing!**
+
+## WEB proxy
+
+Some Telegram clients support proxies of type _WEB_. Such a client
+tunnels ordinary MTProto obfuscated traffic through real HTTPS to a real
+website. mtg serves both the decoy website and the hidden relay on
+`web.bind-to`. See the `[web]` section in
+[`example.config.toml`](./example.config.toml).
+
+mtg does not terminate TLS for WEB. You need a reverse proxy
+([caddy](https://caddyserver.com/), nginx) in front of it: it holds the
+certificate for `web.hostname` and forwards everything to `web.bind-to`
+with `X-Forwarded-For` set. Ready-to-use snippets are in the example
+config. The WEB listener should bind to loopback and be reachable only
+through the reverse proxy. If the reverse proxy is not on loopback, add
+its address to `web.trusted-proxies`.
+
+```toml
+[web]
+enabled = true
+bind-to = "127.0.0.1:8080"
+hostname = "mtg.example.com"
+public-dir = "/var/www/decoy"
+```
+
+`mtg access` prints the links under `web`:
+
+```
+tg://webproxy?server=mtg.example.com&secret=dd<hex>
+https://t.me/webproxy?server=mtg.example.com&secret=dd<hex>
+```
+
+The secret is your ordinary mtg secret key with a `dd` prefix. It is also
+printed by `mtg access` as `web.secret`. A visitor who does not know it
+sees only the decoy website.
+
+Limitations:
+
+1. Only the `https` carrier (long-poll) is implemented. There are no
+   `https-lanes` and no WebSocket carriers.
+2. The site must be served at the domain root. A base path is not supported.
+3. Client support is at an early stage.
+4. In multi-profile embedders of `mtglib/web`, bootstrap and rate budgets
+   are global, so one profile can exhaust them for all the others.
+
+If you want to check a deployment without Telegram, use the
+[bridge harness](./contrib/web-bridge-harness/README.md).
 
 ## Troubleshooting
 

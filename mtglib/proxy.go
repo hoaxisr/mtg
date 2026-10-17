@@ -19,11 +19,25 @@ import (
 	"github.com/panjf2000/ants/v2"
 )
 
+// poolTask is the unit of work handed to the worker pool.
+type poolTask struct {
+	conn essentials.Conn
+
+	// web marks a connection that arrived through ServeWebConn: TLS is already
+	// terminated and the stream starts with the obfuscated2 handshake.
+	web       bool
+	secretIdx int
+}
+
 // Proxy is an MTPROTO proxy structure.
 type Proxy struct {
 	ctx             context.Context
 	ctxCancel       context.CancelFunc
 	streamWaitGroup sync.WaitGroup
+
+	// admitMutex orders ServeWebConn's streamWaitGroup.Add against Shutdown's
+	// cancel-then-Wait, so an Add never races Wait on a zero counter.
+	admitMutex sync.RWMutex
 
 	allowFallbackOnUnknownDC    bool
 	tolerateTimeSkewness        time.Duration
@@ -105,6 +119,13 @@ func (p *Proxy) ServeConn(conn essentials.Conn) {
 		return
 	}
 
+	p.serveAuthenticated(ctx)
+}
+
+// serveAuthenticated is the tail shared by every entry point: once the client
+// handshake has succeeded and ctx.dc is known, it drops the handshake deadline,
+// dials Telegram and relays until either side goes away.
+func (p *Proxy) serveAuthenticated(ctx *streamContext) {
 	if err := ctx.clientConn.SetDeadline(time.Time{}); err != nil {
 		ctx.logger.WarningError("cannot set deadline", err)
 		return
@@ -160,7 +181,7 @@ func (p *Proxy) Serve(listener net.Listener) error {
 			continue
 		}
 
-		err = p.workerPool.Invoke(conn)
+		err = p.workerPool.Invoke(poolTask{conn: conn.(essentials.Conn)}) //nolint: forcetypeassert
 
 		switch {
 		case err == nil:
@@ -177,7 +198,9 @@ func (p *Proxy) Serve(listener net.Listener) error {
 // Shutdown 'gracefully' shutdowns all connections. Please remember that it
 // does not close an underlying listener.
 func (p *Proxy) Shutdown() {
+	p.admitMutex.Lock()
 	p.ctxCancel()
+	p.admitMutex.Unlock()
 	p.streamWaitGroup.Wait()
 	p.workerPool.Release()
 	p.configUpdater.Wait()
@@ -425,7 +448,13 @@ func NewProxy(opts ProxyOpts) (*Proxy, error) {
 
 	pool, err := ants.NewPoolWithFunc(opts.getConcurrency(),
 		func(arg any) {
-			proxy.ServeConn(arg.(essentials.Conn)) //nolint: forcetypeassert
+			task := arg.(poolTask) //nolint: forcetypeassert
+
+			if task.web {
+				proxy.serveWebConn(task.conn, task.secretIdx)
+			} else {
+				proxy.ServeConn(task.conn)
+			}
 		},
 		ants.WithLogger(opts.getLogger("ants")),
 		ants.WithNonblocking(true))
